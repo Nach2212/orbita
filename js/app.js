@@ -77,7 +77,7 @@
     cargando = true; $('#refrescar').classList.add('girando');
     try {
       await API.todo((d) => { datos = d; pintar(); });
-      ultimaOk = Date.now();
+      ultimaOk = Date.now(); ultimoError = '';
       if (manual) U.toast('Actualizado');
     } catch (e) {
       if (e.codigo === 'sin_login' || e.codigo === 'sin_acceso') { yaDentro = false; return mostrarLogin(e.codigo === 'sin_acceso' ? e.message : ''); }
