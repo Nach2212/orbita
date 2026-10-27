@@ -22,7 +22,7 @@
   ];
   const activos = () => MODULOS.filter((m) => m.activo);
 
-  let datos = null, ultimaOk = 0, cargando = false, campoGrafico = {};
+  let datos = null, ultimaOk = 0, cargando = false, campoGrafico = {}, ultimoError = '';
 
   // ---------- arranque ----------
   async function iniciar() {
@@ -81,7 +81,8 @@
       if (manual) U.toast('Actualizado');
     } catch (e) {
       if (e.codigo === 'sin_login' || e.codigo === 'sin_acceso') { yaDentro = false; return mostrarLogin(e.codigo === 'sin_acceso' ? e.message : ''); }
-      U.toast(navigator.onLine ? 'No pude hablar con el cerebro. Muestro lo último guardado.' : 'Sin internet. Muestro lo último guardado.');
+      U.toast(!navigator.onLine ? 'Sin internet. Muestro lo último guardado.' : 'Cerebro: ' + (e.message || 'no responde'));
+      ultimoError = e.message || String(e);
       console.error(e);
     } finally {
       cargando = false; $('#refrescar').classList.remove('girando'); pintarSync();
@@ -93,7 +94,8 @@
     if (API.DEMO) { el.innerHTML = '<span class="demo-tag">DEMO</span>'; return; }
     const viejo = !ultimaOk || Date.now() - ultimaOk > 3 * 60e3;
     el.classList.toggle('offline', viejo);
-    el.textContent = !ultimaOk ? (datos ? 'sin conexión' : '') : viejo ? 'sin conexión · ' + U.hace(ultimaOk) : '';
+    el.textContent = !ultimaOk ? (datos || ultimoError ? 'sin conexión' : '') : viejo ? 'sin conexión · ' + U.hace(ultimaOk) : '';
+    el.title = ultimoError; el.onclick = ultimoError ? () => U.toast('Cerebro: ' + ultimoError) : null;
   }
 
   // ---------- piezas comunes ----------
