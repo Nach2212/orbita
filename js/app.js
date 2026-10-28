@@ -18,7 +18,7 @@
     { id: 'casa', nombre: 'Casa', activo: true, pintar: pintarCasa },
     { id: 'finanzas', nombre: 'Finanzas', activo: true, pintar: pintarFinanzas },
     { id: 'deporte', nombre: 'Deporte', activo: false, etapa: 3 },
-    { id: 'proyectos', nombre: 'Proyectos', activo: false, etapa: 4 },
+    { id: 'proyectos', nombre: 'Proyectos', activo: true, pintar: pintarProyectos },
   ];
   const activos = () => MODULOS.filter((m) => m.activo);
 
@@ -146,7 +146,7 @@
         ${tarjetaClima(d.clima)}
         ${tarjetaEvento(prox, evs)}
         ${tarjetaPlataHoy(d.finanzas)}
-        ${MODULOS.filter((m) => !m.activo && m.id === 'proyectos').map((m) => `<article class="card pronto"><div class="card-cab"><h2 class="card-titulo">Pendientes</h2></div><p>Llega en la etapa ${m.etapa}.</p></article>`).join('')}
+        ${tarjetaPasosHoy(d.proyectos)}
       </div>`;
     try { if (desdeNfc) sessionStorage.setItem('nfcVisto', '1'); } catch (e) {}
     v.querySelectorAll('[data-ir]').forEach((el) => el.onclick = () => { location.hash = el.dataset.ir; });
@@ -236,6 +236,46 @@
         <div class="card-cab"><h2 class="card-titulo">Últimos movimientos</h2><span class="card-meta">se editan en tu planilla</span></div>
         <ul class="lista">${f.ultimos.map((m) => `<li><span class="hora">${m.fecha ? new Date(m.fecha).getDate() + '/' + (new Date(m.fecha).getMonth() + 1) : ''}</span><span style="flex:1">${U.esc(m.desc || m.categoria)} <em class="quiet">${U.esc(m.categoria)}</em></span><b class="${m.tipo === 'ingreso' ? 'lv-ok' : ''}">${m.tipo === 'ingreso' ? '+' : '−'}${plata(m.monto)}</b></li>`).join('')}</ul>
       </article>` : ''}
+    </div>`;
+  }
+
+
+  // ---------- PROYECTOS ----------
+  const cuando = (dias) => dias == null ? '' : dias < 0 ? 'atrasado' : dias === 0 ? 'hoy' : dias === 1 ? 'mañana' : 'en ' + dias + ' días';
+  const urgencia = (dias) => dias == null ? '' : dias <= 2 ? 'lv-crit' : dias <= 7 ? 'lv-warn' : 'lv-ok';
+
+  function tarjetaPasosHoy(p) {
+    if (!p) return '';
+    if (!p.ok) return `<article class="card tocable" data-ir="proyectos"><div class="card-cab"><h2 class="card-titulo">Próximos pasos</h2></div><p class="vacio">${U.esc(p.falta || '')}</p></article>`;
+    const con = p.enCurso.filter((x) => x.paso).slice(0, 3);
+    return `<article class="card tocable" data-ir="proyectos"><div class="card-cab"><h2 class="card-titulo">Próximos pasos</h2><span class="card-meta">${p.enCurso.length} en desarrollo</span></div>
+      ${con.length ? `<ul class="lista pasos">${con.map((x) => `<li><span class="paso-nom"><b>${U.esc(x.nombre)}</b><span>${U.esc(x.paso.texto)}</span></span><span class="paso-cuando ${urgencia(x.paso.dias)}">${cuando(x.paso.dias)}</span></li>`).join('')}</ul>` : '<p class="vacio">Escribe el siguiente paso de tus proyectos en tu planilla.</p>'}
+    </article>`;
+  }
+
+  function pintarProyectos(v, d) {
+    const p = d.proyectos;
+    if (!p || !p.ok) { v.innerHTML = `<div class="saludo"><h1>Proyectos</h1></div><div class="grid"><article class="card aviso ancha"><h3>Tus proyectos necesitan algo</h3><p>${U.esc(p && p.falta || 'No llegaron datos.')}</p></article></div>`; return; }
+    const sinPaso = p.enCurso.filter((x) => !x.paso);
+    v.innerHTML = `<div class="saludo"><h1>Proyectos</h1><p>${p.enCurso.length} en desarrollo · ${p.ideas.length} ideas</p></div>
+    <div class="grid">
+      <article class="card ancha">
+        <div class="card-cab"><h2 class="card-titulo">Siguiente paso de cada uno</h2><span class="card-meta">se edita en tu planilla</span></div>
+        <ul class="pasos-lista">${p.enCurso.map((x) => `<li>
+          <div class="paso-top"><b>${U.esc(x.nombre)}</b>${x.paso && x.paso.dias != null ? `<span class="chip ${urgencia(x.paso.dias)}">${cuando(x.paso.dias)}</span>` : ''}</div>
+          ${x.paso ? `<p>${x.paso.enlace ? `<a href="${U.esc(x.paso.enlace)}" target="_blank" rel="noopener">${U.esc(x.paso.texto)} ↗</a>` : U.esc(x.paso.texto)}${x.paso.detalle ? ` <em class="quiet">${U.esc(x.paso.detalle)}</em>` : ''}${x.paso.origen === 'fondo' ? ' <em class="quiet">· sugerido por tus fondos</em>' : ''}</p>`
+                   : '<p class="falta-paso">Sin siguiente paso. Escríbelo en la columna "Siguiente paso".</p>'}
+        </li>`).join('')}</ul>
+        ${sinPaso.length ? `<p class="consejo">${sinPaso.length} ${sinPaso.length === 1 ? 'proyecto no tiene' : 'proyectos no tienen'} siguiente paso. Un proyecto sin próximo paso concreto tiende a quedarse quieto.</p>` : ''}
+      </article>
+      <article class="card">
+        <div class="card-cab"><h2 class="card-titulo">Fondos por vencer</h2></div>
+        ${p.fondos.length ? `<ul class="lista">${p.fondos.map((f) => `<li><span class="hora ${urgencia(f.dias)}">${cuando(f.dias)}</span><span style="flex:1">${f.enlace ? `<a href="${U.esc(f.enlace)}" target="_blank" rel="noopener">${U.esc(f.organismo)}</a>` : U.esc(f.organismo)}<em class="quiet">${U.esc(f.proyecto || f.linea)}</em></span></li>`).join('')}</ul>` : '<p class="vacio">No hay fondos abiertos con fecha.</p>'}
+      </article>
+      <article class="card">
+        <div class="card-cab"><h2 class="card-titulo">Banco de ideas</h2><span class="card-meta">${p.ideas.length}</span></div>
+        <details class="ideas"><summary>Ver ideas</summary><ul class="lista">${p.ideas.map((i) => `<li><span style="flex:1"><b>${U.esc(i.nombre)}</b><em class="quiet">${U.esc(i.disciplina)}</em></span></li>`).join('')}</ul></details>
+      </article>
     </div>`;
   }
 

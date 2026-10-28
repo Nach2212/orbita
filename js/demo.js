@@ -39,6 +39,13 @@
           historia: [{ mes: 'ago 26', ingresos: 200000, gastos: 90000 }, { mes: 'sep 26', ingresos: 230000, gastos: 195000 }, { mes: 'oct 26', ingresos: 250000, gastos: 142300 }],
           ultimos: [{ fecha: Date.now(), tipo: 'gasto', categoria: 'Comida', desc: 'Almuerzo', monto: 4500 }, { fecha: Date.now() - 864e5, tipo: 'ingreso', categoria: 'Otros', desc: 'Pago proyecto', monto: 100000 }],
           consejos: ['Vas gastando Ocio más rápido que el mes: llevas 85% del tope y va el 87% del mes.', 'Vas ahorrando 43% de lo que entró: sobre tu meta del 20%.'] },
+        proyectos: { ok: true,
+          enCurso: [
+            { nombre: 'Proyecto A', estado: 'En Desarrollo', disciplina: 'XR', paso: { texto: 'Postular a fondo regional', detalle: 'Pendiente de anexos', dias: 2, origen: 'fondo', enlace: 'https://example.com' } },
+            { nombre: 'Proyecto B', estado: 'En Desarrollo', disciplina: 'VR', paso: { texto: 'Grabar video demo', dias: 6, origen: 'tuyo' } },
+            { nombre: 'Proyecto C', estado: 'En Desarrollo', disciplina: 'Juego', paso: null }],
+          ideas: [{ nombre: 'Idea 1', disciplina: 'Nuevos medios' }, { nombre: 'Idea 2', disciplina: 'VR' }],
+          fondos: [{ organismo: 'Fondo regional', linea: 'Línea X', proyecto: 'Proyecto A', dias: 2, enlace: 'https://example.com' }, { organismo: 'Concurso nacional', proyecto: 'Proyecto B', dias: 23 }] },
         clima: { temp: 16.4, sensacion: 15.1, codigo: 2, viento: 14, max: 19, min: 9, lluvia: 10, t: Date.now() },
         eventos: [
           { titulo: 'Reunión de proyecto', inicio: en(42), fin: en(132), todoElDia: false, calendario: 'Personal' },

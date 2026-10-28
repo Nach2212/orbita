@@ -1,6 +1,6 @@
 // ÓRBITA · service worker: guarda la "cáscara" de la app para que abra al instante y sin internet.
 // Los datos NO se guardan aquí (los guarda la app); el cerebro siempre se consulta en vivo.
-const VERSION = 'orbita-v2';
+const VERSION = 'orbita-v3';
 const CASCARA = ['./', 'index.html', 'css/orbita.css', 'js/config.js', 'js/demo.js', 'js/api.js', 'js/ui.js', 'js/app.js',
   'icons/icon.svg', 'icons/icon-192.png', 'manifest.webmanifest'];
 

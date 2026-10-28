@@ -89,7 +89,9 @@ function todo_() {
   }));
   let finanzas;
   try { finanzas = finanzas_(); } catch (e) { finanzas = { ok: false, falta: 'no pude leer tu planilla: ' + e.message }; }
-  return { aparatos: casa.concat(soloAcciones), clima: clima_(), eventos: eventos_(), finanzas };
+  let proyectos;
+  try { proyectos = proyectos_(); } catch (e) { proyectos = { ok: false, falta: 'no pude leer tus proyectos: ' + e.message }; }
+  return { aparatos: casa.concat(soloAcciones), clima: clima_(), eventos: eventos_(), finanzas, proyectos };
 }
 
 // ---------- registro de aparatos (hoja "Aparatos") ----------
@@ -413,6 +415,7 @@ function instalar() {
   ScriptApp.newTrigger('cadaDiezMinutos').timeBased().everyMinutes(10).create();
   ScriptApp.newTrigger('resumirDiario').timeBased().atHour(3).everyDays(1).inTimezone(TZ).create();
   ScriptApp.newTrigger('finanzasDiario').timeBased().atHour(9).everyDays(1).inTimezone(TZ).create();
+  ScriptApp.newTrigger('proyectosDiario').timeBased().atHour(10).everyDays(1).inTimezone(TZ).create();
 
   console.log('Listo. Planilla: ' + ss.getUrl());
   return ss.getUrl();
@@ -576,6 +579,91 @@ function finanzasDiario() {
     }
     props.setProperty('resumen', claveMes);
   }
+}
+
+
+// ============================================================
+// PROYECTOS (solo lectura de "Manejo de fondos": pestañas Proyectos y Fondos)
+// Siguiente paso de cada proyecto = lo que escribas en "Siguiente paso";
+// si está vacío, Órbita propone el fondo abierto más cercano asignado a ese proyecto.
+// ============================================================
+function fechaDe_(v) {
+  if (v instanceof Date && !isNaN(v)) return v.getTime();
+  const m = String(v || '').match(/(\d{4})-(\d{2})-(\d{2})/);
+  return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 23, 59).getTime() : null;
+}
+const dias_ = (ms) => Math.ceil((ms - Date.now()) / 86400000);
+
+function fondosAbiertos_(ss) {
+  const h = ss.getSheetByName('Fondos');
+  if (!h) return [];
+  const v = h.getDataRange().getValues(), e = encabezados_(v, ['Estado', 'Organismo', 'Fecha Límite', 'Proyecto Asignado']);
+  if (!e) return [];
+  const c = e.col, out = [];
+  for (let r = e.fila + 1; r < v.length; r++) {
+    const estado = String(v[r][c.estado] || '').trim(), fecha = fechaDe_(v[r][c.fecha_limite]);
+    if (!fecha || fecha < Date.now() - 86400000) continue;                     // sin fecha real o ya pasó
+    if (/^cerrado$|enviado|adjudicad|rechazad|no postula/i.test(estado)) continue;
+    out.push({
+      organismo: String(v[r][c.organismo] || '').trim(),
+      linea: c['linea/modalidad'] !== undefined ? String(v[r][c['linea/modalidad']] || '').trim() : '',
+      proyecto: String(v[r][c.proyecto_asignado] || '').trim(),
+      docs: c.estado_de_documentacion !== undefined ? String(v[r][c.estado_de_documentacion] || '').trim() : '',
+      enlace: c.enlace !== undefined ? String(v[r][c.enlace] || '').trim() : '',
+      fecha, dias: dias_(fecha), estado,
+    });
+  }
+  return out.sort((a, b) => a.fecha - b.fecha);
+}
+
+function proyectos_() {
+  if (!CONFIG.PROYECTOS_ID) return { ok: false, falta: 'falta PROYECTOS_ID en Config.gs' };
+  const cache = CacheService.getScriptCache(), c = cache.get('proyectos');
+  if (c) return JSON.parse(c);
+  const ss = SpreadsheetApp.openById(CONFIG.PROYECTOS_ID);
+  const fondos = fondosAbiertos_(ss);
+  const hoja = ss.getSheetByName('Proyectos');
+  if (!hoja) return { ok: false, falta: 'no encuentro la pestaña "Proyectos"' };
+  const v = hoja.getDataRange().getValues(), e = encabezados_(v, ['Estado', 'Nombre del Proyecto']);
+  if (!e) return { ok: false, falta: 'en "Proyectos" no encuentro las columnas Estado y Nombre del Proyecto' };
+  const col = e.col, enCurso = [], ideas = [];
+  const base = (s) => normalizar_(s).replace(/_/g, ' ');
+  for (let r = e.fila + 1; r < v.length; r++) {
+    const nombre = String(v[r][col.nombre_del_proyecto] || '').trim();
+    if (!nombre) continue;
+    const estado = String(v[r][col.estado] || '').trim();
+    const p = { nombre, estado, disciplina: col.disciplina !== undefined ? String(v[r][col.disciplina] || '') : '',
+                descripcion: col.descripcion !== undefined ? String(v[r][col.descripcion] || '') : '' };
+    if (/idea/i.test(estado)) { ideas.push(p); continue; }
+    const manual = col.siguiente_paso !== undefined ? String(v[r][col.siguiente_paso] || '').trim() : '';
+    const fManual = col.fecha_paso !== undefined ? fechaDe_(v[r][col.fecha_paso]) : null;
+    const fondo = fondos.find(f => f.proyecto && (base(f.proyecto).indexOf(base(nombre)) >= 0 || base(nombre).indexOf(base(f.proyecto)) >= 0));
+    if (manual) p.paso = { texto: manual, fecha: fManual, dias: fManual ? dias_(fManual) : null, origen: 'tuyo' };
+    else if (fondo) p.paso = { texto: 'Postular a ' + fondo.organismo + (fondo.linea ? ' · ' + fondo.linea : ''), detalle: fondo.docs, fecha: fondo.fecha, dias: fondo.dias, enlace: fondo.enlace, origen: 'fondo' };
+    else p.paso = null;
+    enCurso.push(p);
+  }
+  // los que tienen fecha primero (más urgente arriba), después los sin paso
+  enCurso.sort((a, b) => (a.paso && a.paso.fecha ? a.paso.fecha : 9e15) - (b.paso && b.paso.fecha ? b.paso.fecha : 9e15));
+  const out = { ok: true, enCurso, ideas, fondos: fondos.slice(0, 8) };
+  cache.put('proyectos', JSON.stringify(out), 600);
+  return out;
+}
+
+// alertas: fondo a 7 y a 2 días (una vez cada una)
+function proyectosDiario() {
+  if (!CONFIG.PROYECTOS_ID) return;
+  CacheService.getScriptCache().remove('proyectos');
+  const props = PropertiesService.getScriptProperties();
+  fondosAbiertos_(SpreadsheetApp.openById(CONFIG.PROYECTOS_ID)).forEach(f => {
+    [7, 2].forEach(n => {
+      if (f.dias !== n) return;
+      const k = 'fondo_' + n + '_' + Utilities.base64EncodeWebSafe(f.organismo + f.linea + f.fecha).slice(0, 40);
+      if (props.getProperty(k)) return;
+      avisar_((n === 2 ? '⏰ Quedan 2 días: ' : 'Queda 1 semana: ') + f.organismo, (f.proyecto ? f.proyecto + ' · ' : '') + (f.docs || f.linea), 'date');
+      props.setProperty(k, '1');
+    });
+  });
 }
 
 // Para probar sin la app: corre esto y mira el registro

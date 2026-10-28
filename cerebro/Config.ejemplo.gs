@@ -22,6 +22,8 @@ const CONFIG = {
 
   // Finanzas: ID de tu planilla "Flujo de ingresos" (está en su URL, entre /d/ y /edit)
   FINANZAS_ID: '',
+  // Proyectos: ID de tu planilla "Manejo de fondos"
+  PROYECTOS_ID: '',
 
   // Alertas al celular (app ntfy). Un nombre largo y difícil de adivinar.
   NTFY_TEMA: '',
