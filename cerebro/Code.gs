@@ -87,7 +87,9 @@ function todo_() {
   const soloAcciones = aparatos.filter(a => !a.mide.length).map(a => ({
     id: a.id, nombre: a.nombre, lugar: a.lugar, mide: [], acciones: a.acciones, ultimo: null, serie: [], noche: null,
   }));
-  return { aparatos: casa.concat(soloAcciones), clima: clima_(), eventos: eventos_() };
+  let finanzas;
+  try { finanzas = finanzas_(); } catch (e) { finanzas = { ok: false, falta: 'no pude leer tu planilla: ' + e.message }; }
+  return { aparatos: casa.concat(soloAcciones), clima: clima_(), eventos: eventos_(), finanzas };
 }
 
 // ---------- registro de aparatos (hoja "Aparatos") ----------
@@ -410,9 +412,170 @@ function instalar() {
   ScriptApp.getProjectTriggers().forEach(t => ScriptApp.deleteTrigger(t));
   ScriptApp.newTrigger('cadaDiezMinutos').timeBased().everyMinutes(10).create();
   ScriptApp.newTrigger('resumirDiario').timeBased().atHour(3).everyDays(1).inTimezone(TZ).create();
+  ScriptApp.newTrigger('finanzasDiario').timeBased().atHour(9).everyDays(1).inTimezone(TZ).create();
 
   console.log('Listo. Planilla: ' + ss.getUrl());
   return ss.getUrl();
+}
+
+
+// ============================================================
+// FINANZAS (solo lectura de tu planilla "Flujo de ingresos")
+// ============================================================
+const MESES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+
+// Busca en las primeras filas la fila de encabezados que tenga todas las columnas pedidas.
+// Devuelve {fila, col:{nombre: índice}} usando la PRIMERA aparición de cada nombre (la tabla principal).
+function encabezados_(valores, requeridas, maxFilas) {
+  for (let r = 0; r < Math.min(maxFilas || 20, valores.length); r++) {
+    const cab = valores[r].map(normalizar_), col = {};
+    cab.forEach((c, i) => { if (c && col[c] === undefined) col[c] = i; });
+    if (requeridas.every(q => col[normalizar_(q)] !== undefined)) return { fila: r, col };
+  }
+  return null;
+}
+
+function monto_(v) { if (typeof v === 'number') return v; const n = Number(String(v).replace(/[^0-9,-]/g, '').replace(',', '.')); return isNaN(n) ? 0 : n; }
+
+// Lee los movimientos de una pestaña de mes. {ok, movs:[{fecha,tipo,categoria,desc,monto}], falta}
+function movimientosMes_(hoja) {
+  const v = hoja.getDataRange().getValues();
+  const h = encabezados_(v, ['Fecha', 'Tipo', 'Categoría', 'Monto']);
+  if (!h) return { ok: false, movs: [], falta: 'en "' + hoja.getName() + '" no encuentro las columnas Fecha, Tipo, Categoría y Monto' };
+  const c = h.col, movs = [];
+  for (let r = h.fila + 1; r < v.length; r++) {
+    const tipo = String(v[r][c.tipo] || '').trim(), m = monto_(v[r][c.monto]);
+    if (!tipo || !m) continue;
+    const f = v[r][c.fecha];
+    movs.push({
+      fecha: f instanceof Date ? f.getTime() : null, tipo: normalizar_(tipo),
+      categoria: String(v[r][c.categoria] || 'Sin categoría').trim(),
+      desc: c.descripcion !== undefined ? String(v[r][c.descripcion] || '').trim() : '', monto: m,
+    });
+  }
+  return { ok: true, movs };
+}
+
+function resumenMovs_(movs) {
+  const ing = movs.filter(m => m.tipo === 'ingreso').reduce((a, m) => a + m.monto, 0);
+  const gas = movs.filter(m => m.tipo === 'gasto').reduce((a, m) => a + m.monto, 0);
+  return { ingresos: ing, gastos: gas, saldo: ing - gas, ahorro: ing > 0 ? (ing - gas) / ing : 0 };
+}
+
+function finanzas_() {
+  if (!CONFIG.FINANZAS_ID) return { ok: false, falta: 'falta FINANZAS_ID en Config.gs' };
+  const cache = CacheService.getScriptCache(), c = cache.get('finanzas');
+  if (c) return JSON.parse(c);
+  const ss = SpreadsheetApp.openById(CONFIG.FINANZAS_ID);
+  const ahora = new Date();
+  const hoja = pestanaDelMes_(ss, ahora);
+  const nombreMes = MESES[Number(Utilities.formatDate(ahora, TZ, 'M')) - 1];
+  const tituloMes = nombreMes[0].toUpperCase() + nombreMes.slice(1) + ' ' + Utilities.formatDate(ahora, TZ, 'yyyy');
+  if (!hoja) return { ok: false, falta: 'crea la pestaña "' + tituloMes + '" en tu planilla', mes: tituloMes };
+
+  const mes = movimientosMes_(hoja);
+  if (!mes.ok) return { ok: false, falta: mes.falta, mes: tituloMes };
+  const res = resumenMovs_(mes.movs);
+
+  // reglas 50/30/20 y saldos: tabla Cuenta | Regla | Saldo Actual del Dashboard
+  const reglas = { basico: 0.5, ocio: 0.3, ahorro: 0.2 }, cuentas = [];
+  const dash = ss.getSheetByName('Dashboard');
+  if (dash) {
+    const v = dash.getDataRange().getValues(), h = encabezados_(v, ['Cuenta', 'Regla', 'Saldo Actual'], 40);
+    if (h) for (let r = h.fila + 1; r < v.length; r++) {
+      const nom = String(v[r][h.col.cuenta] || '').trim();
+      if (!nom || /total/i.test(nom)) { if (/total/i.test(nom)) break; continue; }
+      const regla = Number(v[r][h.col.regla]) || 0, saldo = monto_(v[r][h.col.saldo_actual]);
+      reglas[normalizar_(nom)] = regla; cuentas.push({ nombre: nom, regla, saldo });
+    }
+  }
+  // grupos por categoría: hoja Presupuesto (Categoría | Grupo)
+  const grupoDe = {};
+  const tp = leerTabla_(ss, 'Presupuesto', ['Categoría', 'Grupo']);
+  if (tp.ok) tp.filas.forEach(f => { if (f.categoria) grupoDe[String(f.categoria).trim()] = normalizar_(f.grupo) === 'ocio' ? 'ocio' : 'basico'; });
+
+  const porCat = {};
+  mes.movs.filter(m => m.tipo === 'gasto').forEach(m => { porCat[m.categoria] = (porCat[m.categoria] || 0) + m.monto; });
+  const categorias = Object.keys(porCat).map(k => ({ nombre: k, monto: porCat[k], grupo: grupoDe[k] || 'ocio' })).sort((a, b) => b.monto - a.monto);
+  const usado = { basico: 0, ocio: 0 };
+  categorias.forEach(x => { usado[x.grupo] += x.monto; });
+  const grupos = ['basico', 'ocio'].map(g => ({ id: g, nombre: g === 'basico' ? 'Básico' : 'Ocio', regla: reglas[g], tope: Math.round(res.ingresos * reglas[g]), usado: usado[g] }));
+
+  // historia: todas las pestañas de mes que existan, en orden
+  const historia = [];
+  ss.getSheets().forEach(s => {
+    const m = normalizar_(s.getName()).match(/^([a-z]+)_(\d{4})$/);
+    if (!m || MESES.indexOf(m[1]) < 0) return;
+    const mm = movimientosMes_(s);
+    if (!mm.ok) return;
+    const r = resumenMovs_(mm.movs);
+    historia.push({ mes: m[1].slice(0, 3) + ' ' + m[2].slice(2), orden: Number(m[2]) * 12 + MESES.indexOf(m[1]), ingresos: r.ingresos, gastos: r.gastos });
+  });
+  historia.sort((a, b) => a.orden - b.orden);
+
+  const dia = Number(Utilities.formatDate(ahora, TZ, 'd'));
+  const diasMes = new Date(ahora.getFullYear(), ahora.getMonth() + 1, 0).getDate();
+  const out = {
+    ok: true, mes: tituloMes, dia, diasMes, ...res, grupos, categorias, cuentas,
+    historia: historia.slice(-6),
+    ultimos: mes.movs.slice(-5).reverse(),
+    consejos: consejosPlata_(res, grupos, categorias, dia / diasMes),
+    gruposSinDefinir: tp.ok ? [] : ['hoja Presupuesto'],
+  };
+  cache.put('finanzas', JSON.stringify(out), 300);   // 5 min: si editas la planilla, se ve al rato
+  return out;
+}
+
+// Consejos por reglas (sin IA): cortos, concretos, con número
+function consejosPlata_(res, grupos, categorias, avanceMes) {
+  const c = [], fmt = n => '$' + Math.round(n).toLocaleString('es-CL');
+  const ocio = grupos.find(g => g.id === 'ocio');
+  if (ocio && ocio.tope > 0) {
+    const uso = ocio.usado / ocio.tope;
+    if (uso >= 1) c.push('Te pasaste del tope de Ocio por ' + fmt(ocio.usado - ocio.tope) + '. Lo que queda de mes, solo lo básico.');
+    else if (uso > avanceMes + 0.15) c.push('Vas gastando Ocio más rápido que el mes: llevas ' + Math.round(uso * 100) + '% del tope y va el ' + Math.round(avanceMes * 100) + '% del mes.');
+    else c.push('Te quedan ' + fmt(ocio.tope - ocio.usado) + ' de Ocio este mes.');
+  }
+  if (res.ingresos > 0) {
+    if (res.ahorro >= 0.2) c.push('Vas ahorrando ' + Math.round(res.ahorro * 100) + '% de lo que entró: sobre tu meta del 20%.');
+    else c.push('Ahorro del mes: ' + Math.round(res.ahorro * 100) + '%. Para llegar al 20% te faltan ' + fmt(res.ingresos * 0.2 - res.saldo) + '.');
+  }
+  if (categorias.length && res.gastos > 0 && categorias[0].monto / res.gastos > 0.4)
+    c.push(categorias[0].nombre + ' se lleva el ' + Math.round(categorias[0].monto / res.gastos * 100) + '% de tus gastos del mes.');
+  return c.slice(0, 3);
+}
+
+// ---------- alertas de plata (una vez al día, 9 AM) ----------
+function finanzasDiario() {
+  if (!CONFIG.FINANZAS_ID) return;
+  CacheService.getScriptCache().remove('finanzas');
+  const props = PropertiesService.getScriptProperties();
+  const ahora = new Date(), dia = Number(Utilities.formatDate(ahora, TZ, 'd')), claveMes = Utilities.formatDate(ahora, TZ, 'yyyy-MM');
+  const f = finanzas_();
+  // mes nuevo sin pestaña (días 1 a 5)
+  if (!f.ok && /crea la pestaña/.test(f.falta || '') && dia <= 5) avisar_('Mes nuevo en tus finanzas', 'Crea la pestaña "' + f.mes + '" para seguir registrando.', 'calendar');
+  // 80% del tope de Ocio (una vez por mes)
+  if (f.ok) {
+    const ocio = f.grupos.find(g => g.id === 'ocio');
+    if (ocio && ocio.tope > 0 && ocio.usado >= 0.8 * ocio.tope && props.getProperty('ocio80') !== claveMes) {
+      avisar_('Ocio al ' + Math.round(ocio.usado / ocio.tope * 100) + '%', 'Te quedan $' + Math.max(0, Math.round(ocio.tope - ocio.usado)).toLocaleString('es-CL') + ' de Ocio para el resto del mes.', 'moneybag');
+      props.setProperty('ocio80', claveMes);
+    }
+  }
+  // resumen el día 1: cómo cerró el mes anterior
+  if (dia === 1 && props.getProperty('resumen') !== claveMes) {
+    const ss = SpreadsheetApp.openById(CONFIG.FINANZAS_ID);
+    const ant = new Date(ahora.getFullYear(), ahora.getMonth() - 1, 15);
+    const hoja = pestanaDelMes_(ss, ant);
+    if (hoja) {
+      const m = movimientosMes_(hoja);
+      if (m.ok) {
+        const r = resumenMovs_(m.movs);
+        avisar_('Así cerró ' + MESES[ant.getMonth()], 'Entró $' + Math.round(r.ingresos).toLocaleString('es-CL') + ', gastaste $' + Math.round(r.gastos).toLocaleString('es-CL') + '. Ahorraste ' + Math.round(r.ahorro * 100) + '%.', 'bar_chart');
+      }
+    }
+    props.setProperty('resumen', claveMes);
+  }
 }
 
 // Para probar sin la app: corre esto y mira el registro

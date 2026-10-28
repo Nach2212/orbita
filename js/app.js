@@ -16,7 +16,7 @@
   const MODULOS = [
     { id: 'hoy', nombre: 'Hoy', activo: true, pintar: pintarHoy },
     { id: 'casa', nombre: 'Casa', activo: true, pintar: pintarCasa },
-    { id: 'finanzas', nombre: 'Finanzas', activo: false, etapa: 2 },
+    { id: 'finanzas', nombre: 'Finanzas', activo: true, pintar: pintarFinanzas },
     { id: 'deporte', nombre: 'Deporte', activo: false, etapa: 3 },
     { id: 'proyectos', nombre: 'Proyectos', activo: false, etapa: 4 },
   ];
@@ -145,7 +145,8 @@
         ${conSensor.map(avisoCalibrar).join('')}
         ${tarjetaClima(d.clima)}
         ${tarjetaEvento(prox, evs)}
-        ${MODULOS.filter((m) => !m.activo && m.id !== 'deporte').map((m) => `<article class="card pronto"><div class="card-cab"><h2 class="card-titulo">${m.id === 'finanzas' ? 'Plata del mes' : 'Pendientes'}</h2></div><p>Llega en la etapa ${m.etapa}.</p></article>`).join('')}
+        ${tarjetaPlataHoy(d.finanzas)}
+        ${MODULOS.filter((m) => !m.activo && m.id === 'proyectos').map((m) => `<article class="card pronto"><div class="card-cab"><h2 class="card-titulo">Pendientes</h2></div><p>Llega en la etapa ${m.etapa}.</p></article>`).join('')}
       </div>`;
     try { if (desdeNfc) sessionStorage.setItem('nfcVisto', '1'); } catch (e) {}
     v.querySelectorAll('[data-ir]').forEach((el) => el.onclick = () => { location.hash = el.dataset.ir; });
@@ -168,6 +169,74 @@
       <h3>${U.esc(prox.titulo)}</h3><div class="cuando ${minutos > 0 && minutos <= 30 ? 'pronto-ya' : ''}">${cuando}</div>
       ${resto.length ? `<ul class="lista">${resto.map((e) => `<li><span class="hora">${e.todoElDia ? 'día' : U.mismoDia(e.inicio, Date.now()) ? U.hora(e.inicio) : 'mañ ' + U.hora(e.inicio)}</span><span>${U.esc(e.titulo)}</span></li>`).join('')}</ul>` : ''}
     </article>`;
+  }
+
+
+  // ---------- FINANZAS ----------
+  const plata = (n) => '$' + Math.round(n || 0).toLocaleString('es-CL');
+
+  function barra(usado, tope, avanceMes) {
+    const pct = tope > 0 ? usado / tope : 0;
+    const color = pct >= 1 ? 'var(--crit)' : pct >= 0.8 ? 'var(--warn)' : 'var(--cian)';
+    return `<div class="barra" role="img" aria-label="${Math.round(pct * 100)}% usado">
+      <div class="barra-relleno" style="width:${Math.min(100, pct * 100)}%;background:${color}"></div>
+      ${avanceMes != null ? `<div class="barra-hoy" style="left:${avanceMes * 100}%" title="Hoy"></div>` : ''}</div>`;
+  }
+
+  function faltaFinanzas(f) {
+    return `<article class="card aviso ancha"><h3>Tus finanzas necesitan algo</h3><p>${U.esc(f && f.falta ? f.falta[0].toUpperCase() + f.falta.slice(1) : 'No llegaron datos.')}.</p></article>`;
+  }
+
+  function tarjetaPlataHoy(f) {
+    if (!f) return '';
+    if (!f.ok) return `<article class="card tocable" data-ir="finanzas"><div class="card-cab"><h2 class="card-titulo">Plata del mes</h2></div><p class="vacio">${U.esc(f.falta || '')}</p></article>`;
+    const ocio = f.grupos.find((g) => g.id === 'ocio');
+    return `<article class="card tocable" data-ir="finanzas"><div class="card-cab"><h2 class="card-titulo">Plata · ${U.esc(f.mes.split(' ')[0])}</h2><span class="card-meta">ahorro ${Math.round(f.ahorro * 100)}%</span></div>
+      <div class="cifra" style="font-size:36px">${plata(f.saldo)}<small>saldo</small></div>
+      ${ocio ? `<p class="fila-barra"><span>Ocio</span><span>${plata(ocio.usado)} de ${plata(ocio.tope)}</span></p>${barra(ocio.usado, ocio.tope, f.dia / f.diasMes)}` : ''}
+    </article>`;
+  }
+
+  function pintarFinanzas(v, d) {
+    const f = d.finanzas;
+    if (!f || !f.ok) { v.innerHTML = `<div class="saludo"><h1>Finanzas</h1></div><div class="grid">${faltaFinanzas(f)}</div>`; return; }
+    const avance = f.dia / f.diasMes;
+    const maxCat = Math.max(1, ...f.categorias.map((c) => c.monto));
+    const maxH = Math.max(1, ...f.historia.map((h) => Math.max(h.ingresos, h.gastos)));
+    v.innerHTML = `<div class="saludo"><h1>Finanzas</h1><p>${U.esc(f.mes)} · día ${f.dia} de ${f.diasMes}</p></div>
+    <div class="grid">
+      <article class="card ancha">
+        <div class="card-cab"><h2 class="card-titulo">Este mes</h2><span class="card-meta">meta de ahorro 20%</span></div>
+        <div class="kpis">
+          <div><span>Entró</span><b>${plata(f.ingresos)}</b></div>
+          <div><span>Gastaste</span><b>${plata(f.gastos)}</b></div>
+          <div><span>Te queda</span><b class="${f.saldo < 0 ? 'lv-crit' : ''}">${plata(f.saldo)}</b></div>
+          <div><span>Ahorro</span><b class="${f.ahorro >= 0.2 ? 'lv-ok' : 'lv-warn'}">${Math.round(f.ahorro * 100)}%</b></div>
+        </div>
+        ${f.consejos.length ? `<ul class="consejos">${f.consejos.map((c) => `<li>${U.esc(c)}</li>`).join('')}</ul>` : ''}
+      </article>
+      <article class="card">
+        <div class="card-cab"><h2 class="card-titulo">Topes 50/30/20</h2><span class="card-meta">la raya = hoy</span></div>
+        ${f.grupos.map((g) => `<p class="fila-barra"><span>${U.esc(g.nombre)} · ${Math.round(g.regla * 100)}%</span><span>${plata(g.usado)} de ${plata(g.tope)}</span></p>${barra(g.usado, g.tope, avance)}`).join('')}
+        <p class="consejo">Los topes salen de lo que entró este mes: si entra más, suben solos.</p>
+      </article>
+      <article class="card">
+        <div class="card-cab"><h2 class="card-titulo">En qué se fue</h2></div>
+        ${f.categorias.length ? `<ul class="cats">${f.categorias.map((c) => `<li><span class="cat-nom">${U.esc(c.nombre)}<em>${c.grupo === 'ocio' ? 'ocio' : 'básico'}</em></span><span class="cat-barra"><i style="width:${c.monto / maxCat * 100}%" class="${c.grupo}"></i></span><b>${plata(c.monto)}</b></li>`).join('')}</ul>` : '<p class="vacio">Sin gastos este mes todavía.</p>'}
+      </article>
+      ${f.historia.length > 1 ? `<article class="card">
+        <div class="card-cab"><h2 class="card-titulo">Meses</h2><span class="card-meta"><i class="ley ing"></i>entró <i class="ley gas"></i>gastos</span></div>
+        <div class="meses">${f.historia.map((h) => `<div class="mes"><div class="col"><i class="ing" style="height:${h.ingresos / maxH * 100}%" title="Entró ${plata(h.ingresos)}"></i><i class="gas" style="height:${h.gastos / maxH * 100}%" title="Gastos ${plata(h.gastos)}"></i></div><span>${U.esc(h.mes)}</span></div>`).join('')}</div>
+      </article>` : ''}
+      ${f.cuentas.length ? `<article class="card">
+        <div class="card-cab"><h2 class="card-titulo">Tus cuentas</h2></div>
+        <ul class="lista">${f.cuentas.map((c) => `<li><span class="hora">${Math.round(c.regla * 100)}%</span><span style="flex:1">${U.esc(c.nombre)}</span><b>${plata(c.saldo)}</b></li>`).join('')}</ul>
+      </article>` : ''}
+      ${f.ultimos.length ? `<article class="card ancha">
+        <div class="card-cab"><h2 class="card-titulo">Últimos movimientos</h2><span class="card-meta">se editan en tu planilla</span></div>
+        <ul class="lista">${f.ultimos.map((m) => `<li><span class="hora">${m.fecha ? new Date(m.fecha).getDate() + '/' + (new Date(m.fecha).getMonth() + 1) : ''}</span><span style="flex:1">${U.esc(m.desc || m.categoria)} <em class="quiet">${U.esc(m.categoria)}</em></span><b class="${m.tipo === 'ingreso' ? 'lv-ok' : ''}">${m.tipo === 'ingreso' ? '+' : '−'}${plata(m.monto)}</b></li>`).join('')}</ul>
+      </article>` : ''}
+    </div>`;
   }
 
   // ---------- CASA ----------
