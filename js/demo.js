@@ -34,7 +34,7 @@
         }],
         finanzas: { ok: true, mes: 'Octubre 2026', dia: 27, diasMes: 31, ingresos: 250000, gastos: 142300, saldo: 107700, ahorro: 0.43,
           grupos: [{ id: 'basico', nombre: 'Básico', regla: 0.5, tope: 125000, usado: 58300 }, { id: 'ocio', nombre: 'Ocio', regla: 0.3, tope: 75000, usado: 64000 }],
-          categorias: [{ nombre: 'Comida', monto: 38000, grupo: 'ocio' }, { nombre: 'Supermercado', monto: 31500, grupo: 'basico' }, { nombre: 'Ocio', monto: 26000, grupo: 'ocio' }, { nombre: 'Transporte', monto: 18800, grupo: 'basico' }, { nombre: 'Salud', monto: 8000, grupo: 'basico' }],
+          categorias: [{ nombre: 'Comida', monto: 38000, grupo: 'basico' }, { nombre: 'Supermercado', monto: 31500, grupo: 'basico' }, { nombre: 'Ocio', monto: 26000, grupo: 'ocio' }, { nombre: 'Transporte', monto: 18800, grupo: 'basico' }, { nombre: 'Salud', monto: 8000, grupo: 'basico' }],
           cuentas: [{ nombre: 'Básico', regla: 0.5, saldo: 40000 }, { nombre: 'Ocio', regla: 0.3, saldo: 12000 }, { nombre: 'Ahorro', regla: 0.2, saldo: 150000 }],
           historia: [{ mes: 'ago 26', ingresos: 200000, gastos: 90000 }, { mes: 'sep 26', ingresos: 230000, gastos: 195000 }, { mes: 'oct 26', ingresos: 250000, gastos: 142300 }],
           ultimos: [{ fecha: Date.now(), tipo: 'gasto', categoria: 'Comida', desc: 'Almuerzo', monto: 4500 }, { fecha: Date.now() - 864e5, tipo: 'ingreso', categoria: 'Otros', desc: 'Pago proyecto', monto: 100000 }],
