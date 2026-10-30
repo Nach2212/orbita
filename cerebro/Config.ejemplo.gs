@@ -22,6 +22,9 @@ const CONFIG = {
 
   // Finanzas: ID de tu planilla "Flujo de ingresos" (está en su URL, entre /d/ y /edit)
   FINANZAS_ID: '',
+  // Tu "sueldo" operativo FIJO al mes por grupo (los nombres = columna Grupo de la pestaña Presupuesto).
+  // Bórralo para volver a topes por % del ingreso del mes.
+  PRESUPUESTO_MES: { 'Básico': 51353, 'Ocio': 20541, 'Lab': 10270 },
   // Proyectos: ID de tu planilla "Manejo de fondos"
   PROYECTOS_ID: '',
 

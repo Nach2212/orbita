@@ -216,13 +216,14 @@
         ${f.consejos.length ? `<ul class="consejos">${f.consejos.map((c) => `<li>${U.esc(c)}</li>`).join('')}</ul>` : ''}
       </article>
       <article class="card">
-        <div class="card-cab"><h2 class="card-titulo">Topes 50/30/20</h2><span class="card-meta">la raya = hoy</span></div>
-        ${f.grupos.map((g) => `<p class="fila-barra"><span>${U.esc(g.nombre)} · ${Math.round(g.regla * 100)}%</span><span>${plata(g.usado)} de ${plata(g.tope)}</span></p>${barra(g.usado, g.tope, avance)}`).join('')}
-        <p class="consejo">Los topes salen de lo que entró este mes: si entra más, suben solos.</p>
+        <div class="card-cab"><h2 class="card-titulo">Tu presupuesto</h2><span class="card-meta">la raya = hoy</span></div>
+        ${f.grupos.map((g) => `<p class="fila-barra"><span>${U.esc(g.nombre)}${g.regla != null ? ' · ' + Math.round(g.regla * 100) + '%' : ''}</span><span>${plata(g.usado)} de ${plata(g.tope)}</span></p>${barra(g.usado, g.tope, avance)}
+          ${g.topeSemana ? `<p class="semana ${g.usadoSemana > g.topeSemana ? 'lv-crit' : ''}">Esta semana: ${plata(g.usadoSemana)} de ${plata(g.topeSemana)}</p>` : ''}`).join('')}
+        <p class="consejo">${f.grupos.some((g) => g.fijo) ? 'Topes fijos al mes (tu sueldo operativo); la semana es ¼ del mes.' : 'Los topes salen de lo que entró este mes: si entra más, suben solos.'}</p>
       </article>
       <article class="card">
         <div class="card-cab"><h2 class="card-titulo">En qué se fue</h2></div>
-        ${f.categorias.length ? `<ul class="cats">${f.categorias.map((c) => `<li><span class="cat-nom">${U.esc(c.nombre)}<em>${c.grupo === 'ocio' ? 'ocio' : 'básico'}</em></span><span class="cat-barra"><i style="width:${c.monto / maxCat * 100}%" class="${c.grupo}"></i></span><b>${plata(c.monto)}</b></li>`).join('')}</ul>` : '<p class="vacio">Sin gastos este mes todavía.</p>'}
+        ${f.categorias.length ? `<ul class="cats">${f.categorias.map((c) => `<li><span class="cat-nom">${U.esc(c.nombre)}<em>${U.esc(c.grupo)}</em></span><span class="cat-barra"><i style="width:${c.monto / maxCat * 100}%" class="${c.grupo === 'basico' ? 'basico' : c.grupo === 'ocio' ? 'ocio' : 'otro'}"></i></span><b>${plata(c.monto)}</b></li>`).join('')}</ul>` : '<p class="vacio">Sin gastos este mes todavía.</p>'}
       </article>
       ${f.historia.length > 1 ? `<article class="card">
         <div class="card-cab"><h2 class="card-titulo">Meses</h2><span class="card-meta"><i class="ley ing"></i>entró <i class="ley gas"></i>gastos</span></div>

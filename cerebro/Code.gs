@@ -493,16 +493,34 @@ function finanzas_() {
     }
   }
   // grupos por categoría: hoja Presupuesto (Categoría | Grupo)
-  const grupoDe = {};
+  const grupoDe = {}, nombreGrupo = { basico: 'Básico', ocio: 'Ocio' };
   const tp = leerTabla_(ss, 'Presupuesto', ['Categoría', 'Grupo']);
-  if (tp.ok) tp.filas.forEach(f => { if (f.categoria) grupoDe[String(f.categoria).trim()] = normalizar_(f.grupo) === 'ocio' ? 'ocio' : 'basico'; });
+  // cualquier grupo que pongas (Básico, Ocio, Lab…) se respeta tal cual
+  if (tp.ok) tp.filas.forEach(f => {
+    if (!f.categoria || !f.grupo) return;
+    const g = normalizar_(f.grupo); grupoDe[String(f.categoria).trim()] = g; nombreGrupo[g] = String(f.grupo).trim();
+  });
 
   const porCat = {};
   mes.movs.filter(m => m.tipo === 'gasto').forEach(m => { porCat[m.categoria] = (porCat[m.categoria] || 0) + m.monto; });
   const categorias = Object.keys(porCat).map(k => ({ nombre: k, monto: porCat[k], grupo: grupoDe[k] || 'ocio' })).sort((a, b) => b.monto - a.monto);
-  const usado = { basico: 0, ocio: 0 };
-  categorias.forEach(x => { usado[x.grupo] += x.monto; });
-  const grupos = ['basico', 'ocio'].map(g => ({ id: g, nombre: g === 'basico' ? 'Básico' : 'Ocio', regla: reglas[g], tope: Math.round(res.ingresos * reglas[g]), usado: usado[g] }));
+  // topes: si CONFIG.PRESUPUESTO_MES existe, son montos FIJOS al mes (tu "sueldo" operativo);
+  // si no, salen de % del ingreso del mes (tabla Cuenta/Regla del Dashboard)
+  const fijo = CONFIG.PRESUPUESTO_MES || null;
+  const ids = fijo ? Object.keys(fijo).map(normalizar_) : ['basico', 'ocio'];
+  if (fijo) Object.keys(fijo).forEach(k => { nombreGrupo[normalizar_(k)] = nombreGrupo[normalizar_(k)] || k; });
+  const lunes = (() => { const d = new Date(ahora); const w = (d.getDay() + 6) % 7; d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - w); return d.getTime(); })();
+  const usado = {}, semana = {};
+  ids.forEach(g => { usado[g] = 0; semana[g] = 0; });
+  categorias.forEach(x => { if (usado[x.grupo] === undefined) { usado[x.grupo] = 0; semana[x.grupo] = 0; } usado[x.grupo] += x.monto; });
+  mes.movs.filter(m => m.tipo === 'gasto' && m.fecha && m.fecha >= lunes).forEach(m => {
+    const g = grupoDe[m.categoria] || 'ocio'; semana[g] = (semana[g] || 0) + m.monto;
+  });
+  const grupos = ids.map(g => {
+    const tope = fijo ? Number(fijo[Object.keys(fijo).find(k => normalizar_(k) === g)]) || 0 : Math.round(res.ingresos * (reglas[g] || 0));
+    return { id: g, nombre: nombreGrupo[g] || g, fijo: !!fijo, regla: fijo ? null : reglas[g], tope, usado: usado[g] || 0,
+             topeSemana: Math.round(tope / 4), usadoSemana: semana[g] || 0 };
+  });
 
   // historia: todas las pestañas de mes que existan, en orden
   const historia = [];
@@ -514,7 +532,9 @@ function finanzas_() {
     const r = resumenMovs_(mm.movs);
     historia.push({ mes: m[1].slice(0, 3) + ' ' + m[2].slice(2), orden: Number(m[2]) * 12 + MESES.indexOf(m[1]), ingresos: r.ingresos, gastos: r.gastos });
   });
+  const ordenHoy = Number(Utilities.formatDate(ahora, TZ, 'yyyy')) * 12 + Number(Utilities.formatDate(ahora, TZ, 'M')) - 1;
   historia.sort((a, b) => a.orden - b.orden);
+  while (historia.length && historia[historia.length - 1].orden > ordenHoy) historia.pop();   // la pestaña del mes siguiente se crea antes: no se grafica vacía
 
   const dia = Number(Utilities.formatDate(ahora, TZ, 'd'));
   const diasMes = new Date(ahora.getFullYear(), ahora.getMonth() + 1, 0).getDate();
@@ -538,6 +558,11 @@ function consejosPlata_(res, grupos, categorias, avanceMes) {
     if (uso >= 1) c.push('Te pasaste del tope de Ocio por ' + fmt(ocio.usado - ocio.tope) + '. Lo que queda de mes, solo lo básico.');
     else if (uso > avanceMes + 0.15) c.push('Vas gastando Ocio más rápido que el mes: llevas ' + Math.round(uso * 100) + '% del tope y va el ' + Math.round(avanceMes * 100) + '% del mes.');
     else c.push('Te quedan ' + fmt(ocio.tope - ocio.usado) + ' de Ocio este mes.');
+  }
+  const basico = grupos.find(g => g.id === 'basico');
+  if (basico && basico.topeSemana > 0) {
+    const r = basico.topeSemana - basico.usadoSemana;
+    c.push(r >= 0 ? 'Esta semana te quedan ' + fmt(r) + ' de Básico.' : 'Esta semana te pasaste ' + fmt(-r) + ' en Básico.');
   }
   if (res.ingresos > 0) {
     if (res.ahorro >= 0.2) c.push('Vas ahorrando ' + Math.round(res.ahorro * 100) + '% de lo que entró: sobre tu meta del 20%.');
